@@ -8,6 +8,7 @@ import logging
 
 log = logging.getLogger('bot')
 
+
 def configure_logging():
     file_handler = logging.FileHandler(filename='bot.log', mode='a', encoding='utf8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s',
@@ -28,10 +29,7 @@ class UserState:
 
 
 class Bot:
-    """
-    Use Python 3.8
-    echo bot for vk
-    """
+    """ echo bot for vk """
 
     def __init__(self, group_id, token):
         self.group_id = group_id
@@ -54,8 +52,6 @@ class Bot:
 
     def on_event(self, event):
         """
-        Logging events and reply message
-
         :param event: event from VkBotLongPoll.listen
         :return: None
         """
@@ -63,14 +59,13 @@ class Bot:
             log.error(f'Я не умею обрабатывать событие типа {event.type}')
             return
         user_id = event.message.from_id
-        post_text = event.message.text.lower()
-        long_poll = vk_api.bot_longpoll
+        received_text = event.message.text.lower()
 
         if user_id in self.user_states:
-            text_to_send = self.continue_scenario(user_id, post_text)
+            text_to_send = self.continue_scenario(user_id, received_text)
         else:
             for intent in settings.INTENTS:
-                if any(token in post_text for token in intent['tokens']):
+                if any(token in received_text for token in intent['tokens']):
                     if intent['answer']:
                         text_to_send = intent['answer']
                         break
@@ -97,7 +92,15 @@ class Bot:
         steps = settings.SCENARIOS[state.scenario_name]['steps']
         step = steps[state.step_name]
         handler = getattr(handlers, step['handler'])
-        if handler(text=text, context=state.context):
+        if handler(text=text, context=state.context) == 'repeat':
+            next_step = steps[step['fail_step']]
+            text_to_send = next_step['text']
+            if next_step['fail_step']:
+                state.step_name = step['fail_step']
+            else:
+                self.user_states.pop(user_id)
+            return text_to_send
+        elif handler(text=text, context=state.context):
             # next step
             next_step = steps[step['next_step']]
             text_to_send = next_step['text'].format(**state.context)
@@ -108,7 +111,7 @@ class Bot:
             else:
                 self.user_states.pop(user_id)
                 return text_to_send
-                # finis scenario
+                # finish scenario
         else:
             text_to_send = step['failure_text']
             return text_to_send
